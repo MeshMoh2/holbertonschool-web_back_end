@@ -1,103 +1,67 @@
-// 5-http.js
 const http = require('http');
 const fs = require('fs');
 
-function countStudents(filePath) {
+function countStudents(path) {
   return new Promise((resolve, reject) => {
-    fs.readFile(filePath, 'utf8', (err, data) => {
-      if (err) {
-        reject(new Error('Cannot load the database'));
-        return;
-      }
+    fs.readFile(path, { encoding: 'utf-8' }, (err, data) => {
+      if (err) return reject(Error('Cannot load the database'));
+      // split data and taking only list without header
+      const lines = data.split('\n').slice(1, -1);
+      // give the header of data
+      const header = data.split('\n').slice(0, 1)[0].split(',');
+      // find firstname and field index
+      const idxFn = header.findIndex((ele) => ele === 'firstname');
+      const idxFd = header.findIndex((ele) => ele === 'field');
+      // declarate two dictionaries for count each fields and store list of students
+      const fields = {};
+      const students = {};
+      // it will contain all data
+      const all = {};
 
-      const lines = data
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
-
-      if (lines.length <= 1) {
-        // Only header or empty file
-        const summary = 'Number of students: 0';
-        console.log(summary);
-        resolve(summary);
-        return;
-      }
-
-      const headers = lines[0].split(',');
-      const fieldIdx = headers.length - 1;
-      const firstNameIdx = 0;
-
-      const groups = {};
-      let total = 0;
-
-      for (let i = 1; i < lines.length; i += 1) {
-        const row = lines[i].split(',');
-        // Basic guard against malformed rows
-        if (row.length !== headers.length) continue;
-
-        const field = row[fieldIdx];
-        const firstName = row[firstNameIdx];
-
-        if (!field || !firstName) continue;
-
-        if (!groups[field]) groups[field] = [];
-        groups[field].push(firstName);
-        total += 1;
-      }
-
-      const parts = [];
-      parts.push(`Number of students: ${total}`);
-      // Sort fields alphabetically to keep output deterministic (e.g., CS before SWE)
-      Object.keys(groups).sort().forEach((field) => {
-        const list = groups[field];
-        parts.push(
-          `Number of students in ${field}: ${list.length}. List: ${list.join(', ')}`
-        );
+      lines.forEach((line) => {
+        const list = line.split(',');
+        if (!fields[list[idxFd]]) fields[list[idxFd]] = 0;
+        fields[list[idxFd]] += 1;
+        if (!students[list[idxFd]]) students[list[idxFd]] = '';
+        students[list[idxFd]] += students[list[idxFd]]
+          ? `, ${list[idxFn]}`
+          : list[idxFn];
       });
 
-      const summary = parts.join('\n');
-      // Match 3-read_file_async.js behavior: also log to console
-      console.log(summary);
-      resolve(summary);
+      all.numberStudents = `Number of students: ${lines.length}\n`;
+      all.listStudents = [];
+      for (const key in fields) {
+        if (Object.hasOwnProperty.call(fields, key)) {
+          const element = fields[key];
+          all.listStudents.push(`Number of students in ${key}: ${element}. List: ${students[key]}`);
+        }
+      }
+      return resolve(all);
     });
   });
 }
 
-const dbPath = process.argv[2];
+const hostname = '127.0.0.1';
+const port = 1245;
 
 const app = http.createServer((req, res) => {
+  res.statusCode = 200;
   res.setHeader('Content-Type', 'text/plain');
-
-  if (req.url === '/') {
-    res.statusCode = 200;
-    res.end('Hello Holberton School!\n');
-    return;
-  }
-
+  if (req.url === '/') res.end('Hello Holberton School!');
   if (req.url === '/students') {
-    res.statusCode = 200;
-    if (!dbPath) {
-      // No DB path provided: mirror 3-read_file_async.js "without the database" behavior
-      res.end('This is the list of our students\nCannot load the database\n');
-      return;
-    }
-
-    countStudents(dbPath)
-      .then((summary) => {
-        res.end(`This is the list of our students\n${summary}\n`);
+    res.write('This is the list of our students\n');
+    countStudents(process.argv[2])
+      .then((data) => {
+        res.write(data.numberStudents);
+        res.write(data.listStudents.join('\n'));
+        res.end();
       })
-      .catch(() => {
-        res.end('This is the list of our students\nCannot load the database\n');
+      .catch((err) => {
+        res.end(err.message);
       });
-    return;
   }
-
-  // Fallback for any other route
-  res.statusCode = 404;
-  res.end('Not found\n');
 });
 
-// Listen on port 1245 as required
-app.listen(1245);
+app.listen(port, hostname);
 
 module.exports = app;
